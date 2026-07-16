@@ -1,0 +1,11 @@
+@font-face {
+    font-family: "WoodBlockCGRegular";
+    src: url(".Wood Block CG Regular\Wood Block CG Regular.otf") format("opentype");
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+h1 {
+    font-family: "WoodBlockCGRegular", serif;
+}
