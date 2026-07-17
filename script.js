@@ -27,19 +27,51 @@
 // (see HANDOVER.md) — it's expected at API_BASE below.
 const API_BASE = "http://localhost:8000";
 
-// ---- Resume file upload (unchanged behavior) ----
-document.getElementById("resumeFile").addEventListener("change", function (event) {
+// ---- Resume file upload ----
+// .txt files are plain text already, so they're read instantly in the
+// browser. .pdf and .docx are binary formats — reading them with
+// readAsText() just dumps raw bytes as garbled characters, so those are
+// sent to the backend's /api/parse-resume endpoint, which uses pypdf /
+// python-docx to pull out the real text.
+document.getElementById("resumeFile").addEventListener("change", async function (event) {
   const file = event.target.files[0];
-
   if (!file) return;
 
-  const reader = new FileReader();
+  const name = file.name.toLowerCase();
+  const resumeTextarea = document.getElementById("resumeText");
 
-  reader.onload = function (e) {
-    document.getElementById("resumeText").value = e.target.result;
-  };
+  if (name.endsWith(".txt")) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      resumeTextarea.value = e.target.result;
+    };
+    reader.readAsText(file);
+    return;
+  }
 
-  reader.readAsText(file);
+  if (name.endsWith(".pdf") || name.endsWith(".docx")) {
+    setStatus("Reading file…");
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch(`${API_BASE}/api/parse-resume`, {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.detail || "Could not read this file.");
+      }
+      resumeTextarea.value = data.text;
+      setStatus("");
+    } catch (err) {
+      console.error(err);
+      setStatus(`Couldn't read that file: ${err.message}`, true);
+    }
+    return;
+  }
+
+  setStatus("Unsupported file type. Upload a .pdf, .docx, or .txt file.", true);
 });
 
 // ---- Build the results UI ----

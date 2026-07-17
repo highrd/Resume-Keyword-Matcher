@@ -1,7 +1,10 @@
-from fastapi import FastAPI
+import io
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import spacy
+from docx import Document
+from pypdf import PdfReader
 from collections import Counter
 from typing import List
 import re
@@ -49,6 +52,34 @@ class KeywordResponse(BaseModel):
 class SkillsResponse(BaseModel):
     skills: dict
     success: bool
+
+class ParsedFileResponse(BaseModel):
+    text: str
+    success: bool
+
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
+
+def extract_pdf_text(content: bytes) -> str:
+    reader = PdfReader(io.BytesIO(content))
+    pages = [page.extract_text() or "" for page in reader.pages]
+    text = "\n".join(pages).strip()
+    if not text:
+        # Scanned/image-only PDFs have no text layer to pull from.
+        raise ValueError("No extractable text found (this PDF may be a scanned image).")
+    return text
+
+def extract_docx_text(content: bytes) -> str:
+    document = Document(io.BytesIO(content))
+    paragraphs = [p.text for p in document.paragraphs]
+    for table in document.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if cell.text.strip():
+                    paragraphs.append(cell.text)
+    text = "\n".join(p for p in paragraphs if p.strip())
+    if not text:
+        raise ValueError("No extractable text found in this document.")
+    return text
 
 # Helper function to extract keywords
 def extract_keywords_spacy(job_posting: str, top_n: int = 20):
@@ -174,6 +205,37 @@ def extract_skills(job: JobPosting):
             skills={},
             success=False
         )
+
+@app.post("/api/parse-resume", response_model=ParsedFileResponse)
+async def parse_resume(file: UploadFile = File(...)):
+    """Accepts a .pdf, .docx, or .txt upload and returns its plain text."""
+    filename = (file.filename or "").lower()
+    content = await file.read()
+
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 5MB).")
+
+    try:
+        if filename.endswith(".pdf"):
+            text = extract_pdf_text(content)
+        elif filename.endswith(".docx"):
+            text = extract_docx_text(content)
+        elif filename.endswith(".txt"):
+            text = content.decode("utf-8", errors="ignore")
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file type. Upload a .pdf, .docx, or .txt file.",
+            )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception("parse_resume failed: %s", e)
+        raise HTTPException(status_code=500, detail="Could not read this file.")
+
+    return ParsedFileResponse(text=text, success=True)
 
 if __name__ == "__main__":
     import uvicorn
