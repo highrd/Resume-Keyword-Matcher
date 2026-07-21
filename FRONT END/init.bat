@@ -27,7 +27,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/3] Starting the app...
+echo Starting the app...
 echo   Frontend: http://localhost:5500/start.html
 echo   Backend docs: http://localhost:8000/docs
 echo.
