@@ -7,8 +7,9 @@ echo  Resume Keyword Matcher - Setup and Launch
 echo ============================================
 echo.
 
-echo [1/3] Checking/installing backend dependencies (fastapi, uvicorn, spacy)...
-python -m pip install fastapi uvicorn spacy
+echo [1/3] Checking/installing backend dependencies (fastapi, uvicorn, spacy, sentence-transformers)...
+echo   Note: sentence-transformers pulls in PyTorch - first install can take a while.
+python -m pip install fastapi uvicorn spacy sentence-transformers
 if errorlevel 1 (
     echo.
     echo Pip install failed - see the error above. Fix it, then re-run this script.

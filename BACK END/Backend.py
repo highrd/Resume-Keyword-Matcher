@@ -13,8 +13,33 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("job_keyword_extractor")
 
-# Load spaCy model
+# Load spaCy model (used here for parsing/phrase extraction, not for its
+# vectors — en_core_web_sm has no real word vectors. Semantic similarity is
+# handled by sentence-transformers below, which is trained specifically for
+# that job and performs much better than averaged spaCy vectors would,
+# especially for phrase-vs-phrase comparisons like "built REST APIs" vs
+# "API development experience".)
 nlp = spacy.load("en_core_web_sm")
+
+# Lazily-loaded sentence-transformers model. Loaded on first use (not at
+# import time) so the API still starts up fast; only /api/semantic-match
+# pays the model-load cost, on its first call.
+_st_model = None
+
+def get_similarity_model():
+    global _st_model
+    if _st_model is None:
+        from sentence_transformers import SentenceTransformer
+        logger.info("Loading sentence-transformers model (all-MiniLM-L6-v2)...")
+        _st_model = SentenceTransformer("all-MiniLM-L6-v2")
+    return _st_model
+
+# Below this cosine-similarity score, a job phrase is considered "missing"
+# rather than matched. Tuned empirically — MiniLM cosine scores for genuinely
+# related-but-differently-worded phrases (e.g. "built REST APIs" vs "API
+# development experience") tend to land around 0.5-0.7; unrelated phrases
+# usually sit below 0.3.
+SEMANTIC_MATCH_THRESHOLD = 0.7
 
 app = FastAPI(
     title="Job Keyword Extractor",
@@ -57,6 +82,21 @@ class ParsedFileResponse(BaseModel):
     text: str
     success: bool
 
+class SemanticMatchRequest(BaseModel):
+    resume_text: str
+    job_text: str
+
+class MatchedPhrase(BaseModel):
+    job_phrase: str
+    resume_phrase: str
+    score: float  # cosine similarity, 0-1
+
+class SemanticMatchResponse(BaseModel):
+    matched: List[MatchedPhrase]
+    missing: List[str]
+    score: float  # percent of job phrases matched, 0-100
+    success: bool
+
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024  # 5MB
 
 def extract_pdf_text(content: bytes) -> str:
@@ -97,6 +137,59 @@ def extract_keywords_spacy(job_posting: str, top_n: int = 20):
     # Count frequency
     keyword_counts = Counter(keywords)
     return keyword_counts.most_common(top_n)
+
+# Helper function to extract candidate "skill phrases" for semantic matching.
+# Unlike extract_technical_skills below (a fixed dictionary lookup),
+# this pulls open-vocabulary phrases straight out of the text so that
+# free-form wording like "built REST APIs" or "led a team of 5 engineers"
+# becomes something we can embed and compare, instead of only matching
+# against a predefined list of tool/language names.
+def extract_phrases(text: str, max_phrases: int = 60) -> List[str]:
+    """Extract noun-phrase and verb+object phrases from text.
+
+    - Noun chunks capture skill/requirement nouns, e.g. "API development
+      experience", "REST APIs", "cross-functional teams".
+    - Verb + direct-object phrases capture accomplishment phrasing, e.g.
+      "built REST APIs" (verb "build" + object span "REST APIs"),
+      "managed a budget", "led a team".
+    """
+    doc = nlp(text)
+    phrases: List[str] = []
+    seen = set()
+
+    def add(phrase: str):
+        clean = re.sub(r"\s+", " ", phrase).strip()
+        # Drop very short or punctuation-only fragments
+        if len(clean) < 3 or not re.search(r"[a-zA-Z]", clean):
+            return
+        key = clean.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        phrases.append(clean)
+
+    # Noun chunks
+    for chunk in doc.noun_chunks:
+        # Strip leading determiners/possessives ("the", "our", "a") so
+        # phrases compare more consistently, but keep everything else.
+        tokens = [t for t in chunk if t.pos_ not in ("DET", "PRON")]
+        if tokens:
+            add(" ".join(t.text for t in tokens))
+
+    # Verb + direct object phrases (captures accomplishment-style wording)
+    for token in doc:
+        if token.pos_ != "VERB":
+            continue
+        for child in token.children:
+            if child.dep_ in ("dobj", "obj", "attr", "oprd"):
+                span = doc[child.left_edge.i : child.right_edge.i + 1]
+                add(f"{token.lemma_} {span.text}")
+
+    if len(phrases) > max_phrases:
+        phrases = phrases[:max_phrases]
+
+    return phrases
+
 
 # Helper function to extract skills
 def extract_technical_skills(job_posting: str) -> dict:
@@ -205,6 +298,60 @@ def extract_skills(job: JobPosting):
             skills={},
             success=False
         )
+
+@app.post("/api/semantic-match", response_model=SemanticMatchResponse)
+def semantic_match(payload: SemanticMatchRequest):
+    """Compare a resume and job posting by meaning, not exact wording.
+
+    Extracts candidate phrases from both texts, embeds them with
+    sentence-transformers, and matches each job phrase to its closest
+    resume phrase by cosine similarity. This is what lets "built REST
+    APIs" on a resume satisfy "API development experience" in a posting,
+    which plain substring/set matching can't do.
+    """
+    try:
+        job_phrases = extract_phrases(payload.job_text)
+        resume_phrases = extract_phrases(payload.resume_text)
+
+        if not job_phrases:
+            return SemanticMatchResponse(matched=[], missing=[], score=0.0, success=True)
+        if not resume_phrases:
+            return SemanticMatchResponse(matched=[], missing=job_phrases, score=0.0, success=True)
+
+        model = get_similarity_model()
+        job_embeddings = model.encode(job_phrases, normalize_embeddings=True)
+        resume_embeddings = model.encode(resume_phrases, normalize_embeddings=True)
+
+        # Cosine similarity of normalized vectors == dot product
+        sims = job_embeddings @ resume_embeddings.T  # shape: [len(job), len(resume)]
+
+        matched: List[MatchedPhrase] = []
+        missing: List[str] = []
+
+        for i, phrase in enumerate(job_phrases):
+            best_idx = int(sims[i].argmax())
+            best_score = float(sims[i][best_idx])
+            if best_score >= SEMANTIC_MATCH_THRESHOLD:
+                matched.append(MatchedPhrase(
+                    job_phrase=phrase,
+                    resume_phrase=resume_phrases[best_idx],
+                    score=round(best_score, 3),
+                ))
+            else:
+                missing.append(phrase)
+
+        overall_score = round(len(matched) / len(job_phrases) * 100, 1)
+
+        return SemanticMatchResponse(
+            matched=matched,
+            missing=missing,
+            score=overall_score,
+            success=True,
+        )
+    except Exception as e:
+        logger.exception("semantic_match failed: %s", e)
+        return SemanticMatchResponse(matched=[], missing=[], score=0.0, success=False)
+
 
 @app.post("/api/parse-resume", response_model=ParsedFileResponse)
 async def parse_resume(file: UploadFile = File(...)):

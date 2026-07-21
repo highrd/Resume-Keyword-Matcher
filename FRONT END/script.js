@@ -180,7 +180,7 @@ document.getElementById("resumeFile").addEventListener("change", async function 
   results.innerHTML = `
     <div class="rkm-score-block">
       <div class="rkm-score"><span id="rkmScoreValue">0</span><span class="rkm-score-percent">%</span></div>
-      <p class="rkm-score-label">of the job listing's detected skills also appear in your resume</p>
+      <p class="rkm-score-label">of the job listing's key phrases have a semantic match in your resume</p>
     </div>
     <div class="rkm-columns">
       <div class="rkm-col">
@@ -369,6 +369,23 @@ async function extractSkills(text) {
   return data.skills; // { category: [skill, ...], ... }
 }
 
+async function semanticMatch(resumeText, jobText) {
+  const res = await fetch(`${API_BASE}/api/semantic-match`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resume_text: resumeText, job_text: jobText }),
+  });
+  if (!res.ok) {
+    throw new Error(`semantic-match failed: ${res.status}`);
+  }
+  const data = await res.json();
+  if (!data.success) {
+    throw new Error("Backend reported a failure computing the semantic match.");
+  }
+  // { matched: [{ job_phrase, resume_phrase, score }], missing: [phrase, ...], score: 0-100 }
+  return data;
+}
+
 async function extractKeywords(text) {
   const res = await fetch(`${API_BASE}/api/extract-keywords`, {
     method: "POST",
@@ -383,13 +400,6 @@ async function extractKeywords(text) {
     throw new Error("Backend reported a failure extracting keywords.");
   }
   return data.keywords; // [{ word, frequency }, ...]
-}
-
-function flattenSkills(skillsDict) {
-  // skillsDict looks like { programming_languages: [...], tools: [...] }
-  const set = new Set();
-  Object.values(skillsDict).forEach((list) => list.forEach((s) => set.add(s)));
-  return set;
 }
 
 function renderChips(container, items, className) {
@@ -563,22 +573,19 @@ document.getElementById("submitBtn").addEventListener("click", async function (e
   results.hidden = true;
 
   try {
-    const [resumeSkills, jobSkills, jobKeywords] = await Promise.all([
-      extractSkills(resumeText),
-      extractSkills(jobText),
+    const [semantic, jobKeywords] = await Promise.all([
+      semanticMatch(resumeText, jobText),
       extractKeywords(jobText),
     ]);
 
-    const resumeSet = flattenSkills(resumeSkills);
-    const jobSet = flattenSkills(jobSkills);
-
-    const matched = [...jobSet].filter((skill) => resumeSet.has(skill)).sort();
-    const missing = [...jobSet].filter((skill) => !resumeSet.has(skill)).sort();
-    const score = jobSet.size === 0 ? 0 : Math.round((matched.length / jobSet.size) * 100);
+    const score = semantic.score; // already 0-100 from the backend
+    const matchedLabels = semantic.matched.map(
+      (m) => `${m.job_phrase} \u2194 ${m.resume_phrase} (${Math.round(m.score * 100)}%)`
+    );
 
     document.getElementById("rkmScoreValue").textContent = score;
-    renderChips(document.getElementById("rkmMatched"), matched, "rkm-chip-match");
-    renderChips(document.getElementById("rkmMissing"), missing, "rkm-chip-missing");
+    renderChips(document.getElementById("rkmMatched"), matchedLabels, "rkm-chip-match");
+    renderChips(document.getElementById("rkmMissing"), semantic.missing, "rkm-chip-missing");
     renderChips(
       document.getElementById("rkmKeywords"),
       jobKeywords.slice(0, 15).map((k) => `${k.word} (${k.frequency})`),
@@ -591,16 +598,16 @@ document.getElementById("submitBtn").addEventListener("click", async function (e
       resumeText,
       jobText,
       score,
-      matched,
-      missing,
+      matched: matchedLabels,
+      missing: semantic.missing,
       keywords: jobKeywords,
     });
     renderHistoryList();
 
     results.hidden = false;
     setStatus(
-      jobSet.size === 0
-        ? "No specific technical skills were detected in that listing — showing top keywords instead."
+      semantic.matched.length === 0 && semantic.missing.length === 0
+        ? "No comparable phrases were found in that listing — showing top keywords instead."
         : ""
     );
   } catch (err) {
