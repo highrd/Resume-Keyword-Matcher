@@ -39,7 +39,7 @@ def get_similarity_model():
 # related-but-differently-worded phrases (e.g. "built REST APIs" vs "API
 # development experience") tend to land around 0.5-0.7; unrelated phrases
 # usually sit below 0.3.
-SEMANTIC_MATCH_THRESHOLD = 0.7
+SEMANTIC_MATCH_THRESHOLD = 0.80
 
 app = FastAPI(
     title="Job Keyword Extractor",
