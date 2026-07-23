@@ -2,37 +2,45 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Resume Keyword Matcher</title>
   <link rel="stylesheet" href="start.css">
 </head>
 <body>
 
 <div class="container">
-  <h1 class="page-title">Resume Keyword Matcher - By Cheng and Conner</h1>
+  <div class="header">
+    <h1 class="page-title">Resume Keyword Matcher</h1>
+    <p class="page-subtitle">Find which key phrases from the job listing are missing from your resume</p>
+  </div>
 
-  <div class="form-row">
-    <div class="input-box">
-      <label for="resumeText">Input resume here</label>
-      <textarea id="resumeText" placeholder="Paste your resume text here..."></textarea>
-      <div class="file-upload">
-        <label for="resumeFile">Upload file here</label>
-        <input type="file" id="resumeFile" accept=".txt,.pdf,.docx">
+  <div class="form-section">
+    <div class="form-row">
+      <div class="input-box">
+        <label for="resumeText">Your Resume</label>
+        <p class="input-hint">Paste your resume text or upload a document</p>
+        <textarea id="resumeText" placeholder="Paste your resume text here, or upload a PDF/Word document..."></textarea>
+        <div class="file-upload">
+          <label for="resumeFile">Upload file</label>
+          <input type="file" id="resumeFile" accept=".txt,.pdf,.docx">
+          <span class="file-hint">Supports .txt, .pdf, .docx</span>
+        </div>
       </div>
-    </div>
 
-    <div class="input-box">
-      <label for="jobText">Input listing here</label>
-      <textarea id="jobText" placeholder="Paste the job description here..."></textarea>
-      <div class="submit-row">
-        <button type="submit" id="submitBtn">Submit</button>
+      <div class="input-box">
+        <label for="jobText">Job Listing</label>
+        <p class="input-hint">Paste the full job description</p>
+        <textarea id="jobText" placeholder="Paste the full job description here..."></textarea>
+        <div class="submit-row">
+          <button type="submit" id="submitBtn">Analyze Match</button>
+        </div>
       </div>
     </div>
   </div>
+
 </div>
 
 <script src="script.js"></script>
-
-<footer>First project together</footer>
 
 </body>
 </html>
