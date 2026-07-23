@@ -7,33 +7,12 @@ echo  Resume Keyword Matcher - Setup and Launch
 echo ============================================
 echo.
 
-echo [1/3] Checking/installing backend dependencies (fastapi, uvicorn, spacy, sentence-transformers)...
-echo   Note: sentence-transformers pulls in PyTorch - first install can take a while.
-python -m pip install fastapi uvicorn spacy sentence-transformers
-if errorlevel 1 (
-    echo.
-    echo Pip install failed - see the error above. Fix it, then re-run this script.
-    pause
-    exit /b 1
-)
-
-echo.
-echo [2/3] Checking/installing the spaCy language model...
-python -m spacy download en_core_web_sm
-if errorlevel 1 (
-    echo.
-    echo spaCy model download failed - see the error above. Fix it, then re-run this script.
-    pause
-    exit /b 1
-)
+python -m install -r requirements.txt
 
 echo.
 echo Starting the app...
 echo   Frontend: http://localhost:5500/start.html
 echo   Backend docs: http://localhost:8000/docs
-echo.
-echo This window runs the backend - press Ctrl+C here to stop it.
-echo Close the other window to stop the frontend server.
 echo.
 
 start "Resume Matcher Frontend - port 5500" cmd /k "python -m http.server 5500"
