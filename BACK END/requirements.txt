@@ -1,0 +1,7 @@
+spacy
+sentence-transformers
+fastapi
+uvicorn
+python-docx
+python-multipart
+pypdf
