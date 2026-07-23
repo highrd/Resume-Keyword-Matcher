@@ -1,30 +1,5 @@
-// // script.js
-// const fileInput = document.getElementById('fileInput');
-// const fileContent = document.getElementById('fileContent');
+//learnign script.js 
 
-// fileInput.addEventListener('change', (event) => {
-//     const file = event.target.files[0]; // Get the selected file
-    
-//     if (file) {
-//         const reader = new FileReader();
-
-//         // Define what happens once the file is read
-//         reader.onload = function(e) {
-//             fileContent.textContent = e.target.result; // Displays file text
-//         };
-
-//         // Read the file as plain text
-//         reader.readAsText(file);
-//     }
-// });
-
-// ===== Resume Keyword Matcher — frontend logic =====
-// start.html loads this file via <script src="script.js">, so everything
-// lives here: the original file-upload handler, plus the backend calls,
-// the resume/posting comparison, and rendering the results.
-//
-// Talks to the FastAPI backend in test_fastapi.py. Run it locally first
-// (see HANDOVER.md) — it's expected at API_BASE below.
 const API_BASE = "http://localhost:8000";
 
 // ---- Resume file upload ----
