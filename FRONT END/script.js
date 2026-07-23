@@ -1,17 +1,14 @@
 //learnign script.js 
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://localhost:8000";  // backend api location
 
-// ---- Resume file upload ----
-// .txt files are plain text already, so they're read instantly in the
-// browser. .pdf and .docx are binary formats — reading them with
-// readAsText() just dumps raw bytes as garbled characters, so those are
-// sent to the backend's /api/parse-resume endpoint, which uses pypdf /
-// python-docx to pull out the real text.
-document.getElementById("resumeFile").addEventListener("change", async function (event) {
-  const file = event.target.files[0];
-  if (!file) return;
+document.getElementById("resumeFile").addEventListener("change", async function (event) {   // the resume file event lisener to see if the file was added or changed
+  const file = event.target.files[0];      //looks at the first file that the document inputed in by the user
+  if (!file) return;               //if the file is not found go back
 
+  const name = file.name.toLowerCase();              // changes the file name to lowercase 
+  const resumeTextarea = document.getElementById("resumeText");      //get the document text 
+// LOOKS at all file types and it is within a if statement 
   const name = file.name.toLowerCase();
   const resumeTextarea = document.getElementById("resumeText");
 
